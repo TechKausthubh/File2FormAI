@@ -1,0 +1,15 @@
+{
+  "name": "file2formai",
+  "private": true,
+  "packageManager": "pnpm@10.34.6",
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "scripts": {
+    "web:dev": "pnpm --filter @file2formai/web dev",
+    "web:test": "pnpm --filter @file2formai/web test",
+    "web:lint": "pnpm --filter @file2formai/web lint",
+    "web:typecheck": "pnpm --filter @file2formai/web typecheck",
+    "web:build": "pnpm --filter @file2formai/web build"
+  }
+}

@@ -1,0 +1,45 @@
+[project]
+name = "file2formai-backend"
+version = "0.1.0"
+description = "FastAPI application shell for File2FormAI"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "alembic",
+  "asyncpg",
+  "fastapi",
+  "pydantic-settings",
+  "sqlalchemy[asyncio]",
+  "structlog",
+  "uvicorn[standard]",
+]
+
+[dependency-groups]
+dev = [
+  "httpx2",
+  "pytest",
+  "pytest-asyncio",
+  "ruff",
+]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+addopts = "-q"
+asyncio_mode = "auto"
+pythonpath = ["src"]
+testpaths = ["tests"]
+markers = [
+  "integration: tests that require an isolated PostgreSQL database",
+]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["ASYNC", "B", "E", "F", "I", "SIM", "UP"]
+
+[tool.ruff.format]
+quote-style = "double"

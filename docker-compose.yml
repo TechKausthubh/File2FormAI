@@ -1,0 +1,135 @@
+name: file2formai
+
+services:
+  postgres:
+    image: pgvector/pgvector:0.8.1-pg17
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-file2formai}
+      POSTGRES_USER: ${POSTGRES_USER:-file2formai}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-file2formai_dev}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+    restart: unless-stopped
+
+  redis:
+    image: redis:8.2.2-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  minio:
+    build:
+      context: .
+      dockerfile: infra/minio/Dockerfile
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-file2formai}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-file2formai_minio_dev}
+    command: ["server", "/data", "--console-address", ":9001"]
+    ports:
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+    restart: unless-stopped
+
+  minio-init:
+    build:
+      context: .
+      dockerfile: infra/minio/Dockerfile
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        /usr/local/bin/mc alias set local http://minio:9000 "$${MINIO_ROOT_USER}" "$${MINIO_ROOT_PASSWORD}"
+        /usr/local/bin/mc mb --ignore-existing "local/$${MINIO_BUCKET}"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-file2formai}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-file2formai_minio_dev}
+      MINIO_BUCKET: ${MINIO_BUCKET:-file2formai}
+    restart: "no"
+
+  backend:
+    build:
+      context: backend
+      dockerfile: Dockerfile
+    environment:
+      F2F_ENVIRONMENT: ${F2F_ENVIRONMENT:-development}
+      F2F_LOG_LEVEL: INFO
+      F2F_DEVELOPMENT_IDENTITY_ENABLED: ${F2F_DEVELOPMENT_IDENTITY_ENABLED:-true}
+      F2F_DEVELOPMENT_USER_ID: ${F2F_DEVELOPMENT_USER_ID:-20000000-0000-4000-8000-000000000001}
+      F2F_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-file2formai}:${POSTGRES_PASSWORD:-file2formai_dev}@postgres:5432/${POSTGRES_DB:-file2formai}
+      F2F_DATABASE_CONNECT_TIMEOUT_SECONDS: 5
+      F2F_DATABASE_POOL_TIMEOUT_SECONDS: 5
+      F2F_DATABASE_READINESS_TIMEOUT_SECONDS: 5
+      F2F_CORS_ORIGINS: '["http://localhost:5173","http://127.0.0.1:5173"]'
+    command:
+      - /bin/sh
+      - -c
+      - uv run alembic upgrade head && uv run uvicorn file2formai.main:app --app-dir src --host 0.0.0.0 --port 8000 --reload
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - ./backend:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=2)
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    environment:
+      VITE_API_BASE_URL: http://localhost:8000
+    command: ["pnpm", "dev", "--host", "0.0.0.0"]
+    ports:
+      - "127.0.0.1:5173:5173"
+    volumes:
+      - ./apps/web:/workspace/apps/web
+      - web_root_node_modules:/workspace/node_modules
+      - web_package_node_modules:/workspace/apps/web/node_modules
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
+  minio_data:
+  web_root_node_modules:
+  web_package_node_modules:
